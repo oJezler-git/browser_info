@@ -10,7 +10,7 @@ A privacy awareness demonstration that shows what information websites can colle
 - **Cross-Browser Tracking**: Hardware-based identification that works across different browsers
 - **Real-time Behavior Tracking**: Mouse movements, scroll patterns, typing behavior
 - **Device Detection**: GPU, CPU cores, RAM, screen resolution
-- **AI-Powered Profiling**: Uses Grok AI to infer personal details from fingerprint data
+- **AI-Powered Profiling**: Uses Gemini to infer personal details from fingerprint data
 - **Interactive 3D Globe**: See other visitors in real-time with CesiumJS
 - **Privacy Detection**: VPN, ad blocker, incognito mode detection
 
@@ -20,7 +20,7 @@ A privacy awareness demonstration that shows what information websites can colle
 - **Backend**: Bun + Hono
 - **Real-time**: WebSocket
 - **Globe**: CesiumJS with OpenStreetMap tiles
-- **AI**: Grok (X.AI) for user profiling (optional)
+- **AI**: Gemini (Google) for user profiling (optional)
 - **Cache**: Redis for profile caching and unique visitor tracking (optional)
 
 ## Getting Started
@@ -29,7 +29,7 @@ A privacy awareness demonstration that shows what information websites can colle
 
 - [Bun](https://bun.sh/) runtime
 - Redis (optional, for caching)
-- Grok API key (optional, for AI profiling)
+- Gemini API key (optional, for AI profiling)
 
 ### Installation
 
@@ -66,22 +66,24 @@ bun run server/index.ts
 
 ## Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `PORT` | Backend server port | Yes |
-| `VITE_WS_PORT` | WebSocket port for dev | Yes |
-| `REDIS_URL` | Redis connection URL | No |
-| `GROK_API_KEY` | Grok API key for AI profiling | No |
+| Variable         | Description                     | Required |
+| ---------------- | ------------------------------- | -------- |
+| `PORT`           | Backend server port             | Yes      |
+| `VITE_WS_PORT`   | WebSocket port for dev          | Yes      |
+| `REDIS_URL`      | Redis connection URL            | No       |
+| `GEMINI_API_KEY` | Gemini API key for AI profiling | No       |
 
 ## What Information Is Collected
 
 ### Hardware
+
 - Screen resolution, color depth, pixel ratio
 - CPU cores, RAM (capped at 8GB by browsers)
 - GPU vendor and model
 - Touch screen capability
 
 ### Browser
+
 - User agent, platform, language
 - Installed fonts
 - Canvas and WebGL fingerprints
@@ -89,6 +91,7 @@ bun run server/index.ts
 - Supported codecs and DRM
 
 ### Behavior
+
 - Mouse speed, acceleration, movement patterns
 - Scroll depth and direction changes
 - Typing speed and key hold times
@@ -96,6 +99,7 @@ bun run server/index.ts
 - Rage clicks and exit intent
 
 ### Network
+
 - IP address and geolocation
 - Connection type and speed
 - WebRTC local IPs

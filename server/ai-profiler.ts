@@ -3,21 +3,22 @@
  * Uses Grok (X.AI) to analyze user data and infer profile
  */
 
-import { createClient, type RedisClientType } from 'redis';
-import type { ClientInfo, UserProfile } from '../src/types';
+import { createClient, type RedisClientType } from "redis";
+import type { ClientInfo, UserProfile } from "../src/types";
 
-// Initialize Grok AI
-const GROK_API_KEY = process.env.GROK_API_KEY;
-const GROK_API_URL = 'https://api.x.ai/v1/chat/completions';
+// Initialize Gemini AI
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
-if (GROK_API_KEY) {
-  console.log('Grok AI initialized');
+if (GEMINI_API_KEY) {
+  console.log("Gemini AI initialized");
 } else {
-  console.warn('GROK_API_KEY not set - AI profiling disabled');
+  console.warn("GEMINI_API_KEY not set - AI profiling disabled");
 }
 
 // Initialize Redis clients (separate for caching and tracking)
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 // Cache Redis client (for AI profiles)
 let redis: RedisClientType | null = null;
@@ -37,11 +38,11 @@ async function createRedisClient(): Promise<RedisClientType> {
     url: REDIS_URL,
     socket: {
       connectTimeout: 5000,
-      tls: REDIS_URL.startsWith('rediss://'),
+      tls: REDIS_URL.startsWith("rediss://"),
       rejectUnauthorized: false,
       reconnectStrategy: (retries) => {
         if (retries > 5) {
-          return new Error('Max retries reached');
+          return new Error("Max retries reached");
         }
         return Math.min(retries * 200, 2000);
       },
@@ -63,18 +64,18 @@ async function getRedis(): Promise<RedisClientType | null> {
     redisConnecting = true;
     redis = await createRedisClient();
 
-    redis.on('error', (err) => {
-      console.error('Redis cache error:', err.message);
+    redis.on("error", (err) => {
+      console.error("Redis cache error:", err.message);
       redisLastError = Date.now();
     });
 
     await redis.connect();
-    console.log('Redis connected:', REDIS_URL);
+    console.log("Redis connected:", REDIS_URL);
     redisConnecting = false;
     redisLastError = 0;
     return redis;
   } catch (err) {
-    console.error('Redis connection failed:', (err as Error).message);
+    console.error("Redis connection failed:", (err as Error).message);
     redisConnecting = false;
     redisLastError = Date.now();
     redis = null;
@@ -84,7 +85,10 @@ async function getRedis(): Promise<RedisClientType | null> {
 
 // Separate Redis connection for tracking (isolated from cache errors)
 async function getTrackingRedis(): Promise<RedisClientType | null> {
-  if (trackingRedisLastError > 0 && Date.now() - trackingRedisLastError < REDIS_BACKOFF_MS) {
+  if (
+    trackingRedisLastError > 0 &&
+    Date.now() - trackingRedisLastError < REDIS_BACKOFF_MS
+  ) {
     return null;
   }
 
@@ -95,18 +99,18 @@ async function getTrackingRedis(): Promise<RedisClientType | null> {
     trackingRedisConnecting = true;
     trackingRedis = await createRedisClient();
 
-    trackingRedis.on('error', (err) => {
-      console.error('Redis tracking error:', err.message);
+    trackingRedis.on("error", (err) => {
+      console.error("Redis tracking error:", err.message);
       trackingRedisLastError = Date.now();
     });
 
     await trackingRedis.connect();
-    console.log('Redis tracking connected');
+    console.log("Redis tracking connected");
     trackingRedisConnecting = false;
     trackingRedisLastError = 0;
     return trackingRedis;
   } catch (err) {
-    console.error('Redis tracking connection failed:', (err as Error).message);
+    console.error("Redis tracking connection failed:", (err as Error).message);
     trackingRedisConnecting = false;
     trackingRedisLastError = Date.now();
     trackingRedis = null;
@@ -138,7 +142,10 @@ function checkRateLimit(userId: string): boolean {
 
   if (!userLimit || now > userLimit.resetTime) {
     // New window for this user
-    userRateLimits.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    userRateLimits.set(userId, {
+      count: 1,
+      resetTime: now + RATE_LIMIT_WINDOW,
+    });
     return true;
   }
 
@@ -167,12 +174,12 @@ async function getCachedProfile(cacheKey: string): Promise<UserProfile | null> {
 
     const cached = await client.get(cacheKey);
     if (cached) {
-      console.log('Cache hit for profile:', cacheKey);
+      console.log("Cache hit for profile:", cacheKey);
       return JSON.parse(cached);
     }
     return null;
   } catch (err) {
-    console.error('Redis get error:', err);
+    console.error("Redis get error:", err);
     return null;
   }
 }
@@ -180,15 +187,18 @@ async function getCachedProfile(cacheKey: string): Promise<UserProfile | null> {
 /**
  * Cache profile in Redis
  */
-async function cacheProfile(cacheKey: string, profile: UserProfile): Promise<void> {
+async function cacheProfile(
+  cacheKey: string,
+  profile: UserProfile
+): Promise<void> {
   try {
     const client = await getRedis();
     if (!client) return;
 
     await client.setEx(cacheKey, CACHE_TTL, JSON.stringify(profile));
-    console.log('Cached profile:', cacheKey);
+    console.log("Cached profile:", cacheKey);
   } catch (err) {
-    console.error('Redis set error:', err);
+    console.error("Redis set error:", err);
   }
 }
 
@@ -202,19 +212,23 @@ export interface GeoData {
 }
 
 /**
- * Build prompt for Grok AI
+ * Build prompt for Gemini AI
  */
 function buildPrompt(clientInfo: Partial<ClientInfo>, geo?: GeoData): string {
   // Get current time info for the user's timezone
   const now = new Date();
-  const userTimezone = clientInfo.timezone || geo?.timezone || 'UTC';
+  const userTimezone = clientInfo.timezone || geo?.timezone || "UTC";
   let localHour = now.getUTCHours();
   try {
-    const localTime = new Date(now.toLocaleString('en-US', { timeZone: userTimezone }));
+    const localTime = new Date(
+      now.toLocaleString("en-US", { timeZone: userTimezone })
+    );
     localHour = localTime.getHours();
-  } catch { /* use UTC */ }
+  } catch {
+    /* use UTC */
+  }
 
-  const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
 
   // Extract relevant data for profiling
   const data = {
@@ -285,37 +299,48 @@ function buildPrompt(clientInfo: Partial<ClientInfo>, geo?: GeoData): string {
     isVirtualMachine: clientInfo.isVirtualMachine,
 
     // Behavioral data (if available)
-    behavior: clientInfo.behavior ? {
-      mouseSpeed: clientInfo.behavior.mouseSpeed,
-      typingSpeed: clientInfo.behavior.typingSpeed,
-      scrollSpeed: clientInfo.behavior.scrollSpeed,
-      sessionDuration: clientInfo.behavior.sessionDuration,
-      tabSwitchCount: clientInfo.behavior.tabSwitchCount,
-    } : null,
+    behavior: clientInfo.behavior
+      ? {
+          mouseSpeed: clientInfo.behavior.mouseSpeed,
+          typingSpeed: clientInfo.behavior.typingSpeed,
+          scrollSpeed: clientInfo.behavior.scrollSpeed,
+          sessionDuration: clientInfo.behavior.sessionDuration,
+          tabSwitchCount: clientInfo.behavior.tabSwitchCount,
+        }
+      : null,
 
     // Advanced behavior
-    advancedBehavior: clientInfo.advancedBehavior ? {
-      devToolsOpen: clientInfo.advancedBehavior.devToolsOpen,
-      rageClickCount: clientInfo.advancedBehavior.rageClickCount,
-      likelyHandedness: clientInfo.advancedBehavior.likelyHandedness,
-      keyboardShortcutsUsed: clientInfo.advancedBehavior.keyboardShortcutsUsed,
-    } : null,
+    advancedBehavior: clientInfo.advancedBehavior
+      ? {
+          devToolsOpen: clientInfo.advancedBehavior.devToolsOpen,
+          rageClickCount: clientInfo.advancedBehavior.rageClickCount,
+          likelyHandedness: clientInfo.advancedBehavior.likelyHandedness,
+          keyboardShortcutsUsed:
+            clientInfo.advancedBehavior.keyboardShortcutsUsed,
+        }
+      : null,
 
     // Geo/Location (from server-side IP lookup)
-    geo: geo ? {
-      city: geo.city,
-      region: geo.region,
-      country: geo.country,
-      isp: geo.isp,
-    } : null,
+    geo: geo
+      ? {
+          city: geo.city,
+          region: geo.region,
+          country: geo.country,
+          isp: geo.isp,
+        }
+      : null,
 
     // Time context
     visitTime: {
       localHour,
       dayOfWeek,
-      isWeekend: dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday',
+      isWeekend: dayOfWeek === "Saturday" || dayOfWeek === "Sunday",
       isLateNight: localHour >= 0 && localHour < 6,
-      isWorkHours: localHour >= 9 && localHour <= 17 && dayOfWeek !== 'Saturday' && dayOfWeek !== 'Sunday',
+      isWorkHours:
+        localHour >= 9 &&
+        localHour <= 17 &&
+        dayOfWeek !== "Saturday" &&
+        dayOfWeek !== "Sunday",
     },
 
     // Storage usage (heavy user indicator)
@@ -470,13 +495,13 @@ function parseAIResponse(response: string): UserProfile | null {
   try {
     // Clean up response (remove markdown code blocks if present)
     let cleaned = response.trim();
-    if (cleaned.startsWith('```json')) {
+    if (cleaned.startsWith("```json")) {
       cleaned = cleaned.slice(7);
     }
-    if (cleaned.startsWith('```')) {
+    if (cleaned.startsWith("```")) {
       cleaned = cleaned.slice(3);
     }
-    if (cleaned.endsWith('```')) {
+    if (cleaned.endsWith("```")) {
       cleaned = cleaned.slice(0, -3);
     }
     cleaned = cleaned.trim();
@@ -484,9 +509,11 @@ function parseAIResponse(response: string): UserProfile | null {
     const parsed = JSON.parse(cleaned);
 
     // Validate required fields
-    if (typeof parsed.likelyDeveloper !== 'boolean' ||
-        typeof parsed.developerScore !== 'number') {
-      throw new Error('Invalid AI response structure');
+    if (
+      typeof parsed.likelyDeveloper !== "boolean" ||
+      typeof parsed.developerScore !== "number"
+    ) {
+      throw new Error("Invalid AI response structure");
     }
 
     return {
@@ -500,39 +527,59 @@ function parseAIResponse(response: string): UserProfile | null {
       powerUserScore: Math.min(100, Math.max(0, parsed.powerUserScore ?? 0)),
       privacyConscious: parsed.privacyConscious ?? false,
       privacyScore: Math.min(100, Math.max(0, parsed.privacyScore ?? 0)),
-      deviceTier: parsed.deviceTier ?? 'mid-range',
-      estimatedDeviceValue: parsed.estimatedDeviceValue ?? 'Unknown',
-      deviceAge: parsed.deviceAge ?? 'recent',
+      deviceTier: parsed.deviceTier ?? "mid-range",
+      estimatedDeviceValue: parsed.estimatedDeviceValue ?? "Unknown",
+      deviceAge: parsed.deviceAge ?? "recent",
       humanScore: Math.min(100, Math.max(0, parsed.humanScore ?? 100)),
       botIndicators: parsed.botIndicators ?? [],
       likelyTechSavvy: parsed.likelyTechSavvy ?? false,
       likelyMobile: parsed.likelyMobile ?? false,
       likelyWorkDevice: parsed.likelyWorkDevice ?? false,
-      likelyCountry: parsed.likelyCountry ?? 'Unknown',
+      likelyCountry: parsed.likelyCountry ?? "Unknown",
       inferredInterests: parsed.inferredInterests ?? [],
       fraudRiskScore: Math.min(100, Math.max(0, parsed.fraudRiskScore ?? 0)),
       fraudIndicators: parsed.fraudIndicators ?? [],
       // Extended fields from AI
-      ...(parsed.personalityTraits && { personalityTraits: parsed.personalityTraits }),
+      ...(parsed.personalityTraits && {
+        personalityTraits: parsed.personalityTraits,
+      }),
       ...(parsed.incomeLevel && { incomeLevel: parsed.incomeLevel }),
       ...(parsed.ageRange && { ageRange: parsed.ageRange }),
       ...(parsed.occupation && { occupation: parsed.occupation }),
-      ...(parsed.developerReason && { developerReason: parsed.developerReason }),
+      ...(parsed.developerReason && {
+        developerReason: parsed.developerReason,
+      }),
       ...(parsed.gamerReason && { gamerReason: parsed.gamerReason }),
       ...(parsed.designerReason && { designerReason: parsed.designerReason }),
-      ...(parsed.powerUserReason && { powerUserReason: parsed.powerUserReason }),
+      ...(parsed.powerUserReason && {
+        powerUserReason: parsed.powerUserReason,
+      }),
       ...(parsed.privacyReason && { privacyReason: parsed.privacyReason }),
 
       // Creepy personal inferences
-      ...(parsed.relationshipStatus && { relationshipStatus: parsed.relationshipStatus }),
-      ...(parsed.relationshipReason && { relationshipReason: parsed.relationshipReason }),
+      ...(parsed.relationshipStatus && {
+        relationshipStatus: parsed.relationshipStatus,
+      }),
+      ...(parsed.relationshipReason && {
+        relationshipReason: parsed.relationshipReason,
+      }),
       ...(parsed.educationLevel && { educationLevel: parsed.educationLevel }),
-      ...(parsed.educationReason && { educationReason: parsed.educationReason }),
-      ...(parsed.politicalLeaning && { politicalLeaning: parsed.politicalLeaning }),
-      ...(parsed.politicalReason && { politicalReason: parsed.politicalReason }),
+      ...(parsed.educationReason && {
+        educationReason: parsed.educationReason,
+      }),
+      ...(parsed.politicalLeaning && {
+        politicalLeaning: parsed.politicalLeaning,
+      }),
+      ...(parsed.politicalReason && {
+        politicalReason: parsed.politicalReason,
+      }),
       ...(parsed.lifeSituation && { lifeSituation: parsed.lifeSituation }),
-      ...(parsed.financialHealth && { financialHealth: parsed.financialHealth }),
-      ...(parsed.financialReason && { financialReason: parsed.financialReason }),
+      ...(parsed.financialHealth && {
+        financialHealth: parsed.financialHealth,
+      }),
+      ...(parsed.financialReason && {
+        financialReason: parsed.financialReason,
+      }),
       ...(parsed.workStyle && { workStyle: parsed.workStyle }),
       ...(parsed.workReason && { workReason: parsed.workReason }),
       ...(parsed.sleepSchedule && { sleepSchedule: parsed.sleepSchedule }),
@@ -541,7 +588,9 @@ function parseAIResponse(response: string): UserProfile | null {
       ...(parsed.stressReason && { stressReason: parsed.stressReason }),
       ...(parsed.socialLife && { socialLife: parsed.socialLife }),
       ...(parsed.socialReason && { socialReason: parsed.socialReason }),
-      ...(parsed.likelyParent !== undefined && { likelyParent: parsed.likelyParent }),
+      ...(parsed.likelyParent !== undefined && {
+        likelyParent: parsed.likelyParent,
+      }),
       ...(parsed.parentReason && { parentReason: parsed.parentReason }),
       ...(parsed.petOwner !== undefined && { petOwner: parsed.petOwner }),
       ...(parsed.petType && { petType: parsed.petType }),
@@ -549,26 +598,38 @@ function parseAIResponse(response: string): UserProfile | null {
       ...(parsed.homeReason && { homeReason: parsed.homeReason }),
       ...(parsed.carOwner !== undefined && { carOwner: parsed.carOwner }),
       ...(parsed.carType && { carType: parsed.carType }),
-      ...(parsed.healthConscious !== undefined && { healthConscious: parsed.healthConscious }),
+      ...(parsed.healthConscious !== undefined && {
+        healthConscious: parsed.healthConscious,
+      }),
       ...(parsed.healthReason && { healthReason: parsed.healthReason }),
-      ...(parsed.dietaryPreference && { dietaryPreference: parsed.dietaryPreference }),
+      ...(parsed.dietaryPreference && {
+        dietaryPreference: parsed.dietaryPreference,
+      }),
       ...(parsed.coffeeOrTea && { coffeeOrTea: parsed.coffeeOrTea }),
-      ...(parsed.drinksAlcohol !== undefined && { drinksAlcohol: parsed.drinksAlcohol }),
+      ...(parsed.drinksAlcohol !== undefined && {
+        drinksAlcohol: parsed.drinksAlcohol,
+      }),
       ...(parsed.smokes !== undefined && { smokes: parsed.smokes }),
       ...(parsed.fitnessLevel && { fitnessLevel: parsed.fitnessLevel }),
       ...(parsed.fitnessReason && { fitnessReason: parsed.fitnessReason }),
       ...(parsed.lifeEvents && { lifeEvents: parsed.lifeEvents }),
       ...(parsed.shoppingHabits && { shoppingHabits: parsed.shoppingHabits }),
       ...(parsed.shoppingReason && { shoppingReason: parsed.shoppingReason }),
-      ...(parsed.brandPreference && { brandPreference: parsed.brandPreference }),
-      ...(parsed.streamingServices && { streamingServices: parsed.streamingServices }),
+      ...(parsed.brandPreference && {
+        brandPreference: parsed.brandPreference,
+      }),
+      ...(parsed.streamingServices && {
+        streamingServices: parsed.streamingServices,
+      }),
       ...(parsed.musicTaste && { musicTaste: parsed.musicTaste }),
-      ...(parsed.travelFrequency && { travelFrequency: parsed.travelFrequency }),
+      ...(parsed.travelFrequency && {
+        travelFrequency: parsed.travelFrequency,
+      }),
       ...(parsed.travelReason && { travelReason: parsed.travelReason }),
       ...(parsed.creepyInsights && { creepyInsights: parsed.creepyInsights }),
     } as UserProfile;
   } catch (err) {
-    console.error('Failed to parse AI response:', err);
+    console.error("Failed to parse AI response:", err);
     return null;
   }
 }
@@ -576,75 +637,89 @@ function parseAIResponse(response: string): UserProfile | null {
 /**
  * Generate AI profile for client info
  */
-export async function generateAIProfile(clientInfo: Partial<ClientInfo>, geo?: GeoData): Promise<{
+export async function generateAIProfile(
+  clientInfo: Partial<ClientInfo>,
+  geo?: GeoData
+): Promise<{
   profile: UserProfile | null;
-  source: 'ai' | 'cache' | 'fallback';
+  source: "ai" | "cache" | "fallback";
   error?: string;
 }> {
-  const fingerprintId = clientInfo.fingerprintId || 'unknown';
-  const crossBrowserId = clientInfo.crossBrowserId || 'unknown';
+  const fingerprintId = clientInfo.fingerprintId || "unknown";
+  const crossBrowserId = clientInfo.crossBrowserId || "unknown";
   const cacheKey = getCacheKey(fingerprintId, crossBrowserId);
 
   // Try cache first
   const cached = await getCachedProfile(cacheKey);
   if (cached) {
-    return { profile: cached, source: 'cache' };
+    return { profile: cached, source: "cache" };
   }
 
   // If no AI available, return null (will use fallback)
-  if (!GROK_API_KEY) {
-    return { profile: null, source: 'fallback', error: 'AI not configured' };
+  if (!GEMINI_API_KEY) {
+    return { profile: null, source: "fallback", error: "AI not configured" };
   }
 
   // Check rate limit (per user)
   const userId = `${fingerprintId}:${crossBrowserId}`;
   if (!checkRateLimit(userId)) {
     console.log(`Rate limited user ${userId} - using fallback`);
-    return { profile: null, source: 'fallback', error: 'Rate limited' };
+    return { profile: null, source: "fallback", error: "Rate limited" };
   }
 
   try {
     const prompt = buildPrompt(clientInfo, geo);
 
-    const response = await fetch(GROK_API_URL, {
-      method: 'POST',
+    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROK_API_KEY}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: 'grok-4-1-fast-reasoning',
-        messages: [
+        contents: [
           {
-            role: 'system',
-            content: 'You are a user profiling AI for an educational privacy demonstration. Analyze browser fingerprint data and infer personal details. Always respond with valid JSON only, no markdown.'
+            role: "user",
+            parts: [{ text: prompt }],
           },
-          {
-            role: 'user',
-            content: prompt
-          }
         ],
-        stream: false,
-        temperature: 0.3,
+        systemInstruction: {
+          parts: [
+            {
+              text: "You are a user profiling AI for an educational privacy demonstration. Analyze browser fingerprint data and infer personal details. Always respond with valid JSON only, no markdown.",
+            },
+          ],
+        },
+        generationConfig: {
+          temperature: 0.3,
+          responseMimeType: "application/json",
+        },
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Grok API error:', response.status, errorText);
-      return { profile: null, source: 'fallback', error: `Grok API error: ${response.status}` };
+      console.error("Gemini API error:", response.status, errorText);
+      return {
+        profile: null,
+        source: "fallback",
+        error: `Gemini API error: ${response.status}`,
+      };
     }
 
     const data = await response.json();
-    const text = data.choices?.[0]?.message?.content;
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!text) {
-      return { profile: null, source: 'fallback', error: 'Empty AI response' };
+      return { profile: null, source: "fallback", error: "Empty AI response" };
     }
 
     const profile = parseAIResponse(text);
     if (!profile) {
-      return { profile: null, source: 'fallback', error: 'Failed to parse AI response' };
+      return {
+        profile: null,
+        source: "fallback",
+        error: "Failed to parse AI response",
+      };
     }
 
     // Mark as AI-generated
@@ -653,10 +728,10 @@ export async function generateAIProfile(clientInfo: Partial<ClientInfo>, geo?: G
     // Cache the result
     await cacheProfile(cacheKey, profile);
 
-    return { profile, source: 'ai' };
+    return { profile, source: "ai" };
   } catch (err) {
-    console.error('AI profiling error:', err);
-    return { profile: null, source: 'fallback', error: String(err) };
+    console.error("AI profiling error:", err);
+    return { profile: null, source: "fallback", error: String(err) };
   }
 }
 
@@ -666,22 +741,25 @@ export async function generateAIProfile(clientInfo: Partial<ClientInfo>, geo?: G
 export async function closeRedis(): Promise<void> {
   if (redis && redis.isOpen) {
     await redis.quit();
-    console.log('Redis cache disconnected');
+    console.log("Redis cache disconnected");
   }
   if (trackingRedis && trackingRedis.isOpen) {
     await trackingRedis.quit();
-    console.log('Redis tracking disconnected');
+    console.log("Redis tracking disconnected");
   }
 }
 
 // Unique visitors tracking key
-const UNIQUE_VISITORS_KEY = 'yourinfo:unique_visitors';
+const UNIQUE_VISITORS_KEY = "yourinfo:unique_visitors";
 
 /**
  * Track a unique visitor by fingerprint with retry logic
  * Returns true if this is a new visitor, false if already seen
  */
-export async function trackUniqueVisitor(fingerprintId: string, crossBrowserId: string): Promise<boolean> {
+export async function trackUniqueVisitor(
+  fingerprintId: string,
+  crossBrowserId: string
+): Promise<boolean> {
   const visitorKey = `${fingerprintId}:${crossBrowserId}`;
   const maxRetries = 3;
 
@@ -690,7 +768,7 @@ export async function trackUniqueVisitor(fingerprintId: string, crossBrowserId: 
       const client = await getTrackingRedis();
       if (!client) {
         if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+          await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
           continue;
         }
         return false;
@@ -701,15 +779,20 @@ export async function trackUniqueVisitor(fingerprintId: string, crossBrowserId: 
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       if (attempt === maxRetries) {
-        console.error(`Track unique visitor failed after ${maxRetries} attempts:`, errorMsg);
+        console.error(
+          `Track unique visitor failed after ${maxRetries} attempts:`,
+          errorMsg
+        );
       }
       // Reset connection on error to force reconnect
       if (trackingRedis) {
-        try { await trackingRedis.disconnect(); } catch {}
+        try {
+          await trackingRedis.disconnect();
+        } catch {}
         trackingRedis = null;
       }
       if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
       }
     }
   }
@@ -727,7 +810,7 @@ export async function getTotalUniqueVisitors(): Promise<number> {
       const client = await getTrackingRedis();
       if (!client) {
         if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
           continue;
         }
         return 0;
@@ -736,10 +819,13 @@ export async function getTotalUniqueVisitors(): Promise<number> {
       return await client.sCard(UNIQUE_VISITORS_KEY);
     } catch (err) {
       if (attempt === maxRetries) {
-        console.error('Get unique visitors error:', err instanceof Error ? err.message : err);
+        console.error(
+          "Get unique visitors error:",
+          err instanceof Error ? err.message : err
+        );
       }
       if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
   }

@@ -3,14 +3,14 @@
 module.exports = {
   apps: [
     {
-      name: 'yourinfo',
-      script: 'bun',
-      args: 'run server/index.ts',
-      cwd: '/path/to/yourinfo',
+      name: "yourinfo",
+      script: "bun",
+      args: "run server/index.ts",
+      cwd: "/path/to/yourinfo",
       env: {
         PORT: 3020,
-        REDIS_URL: 'rediss://:YOUR_REDIS_PASSWORD@your-redis-host:6379',
-        GROK_API_KEY: 'your-grok-api-key',
+        REDIS_URL: "rediss://:YOUR_REDIS_PASSWORD@your-redis-host:6379",
+        GEMINI_API_KEY: "your-gemini-api-key",
       },
     },
     // Add more instances for load balancing:
