@@ -125,6 +125,13 @@ export function InfoPanel({ visitor, isCurrentUser, onClose, aiLoading }: InfoPa
       </div>
 
       <div className="info-panel-content">
+        {/* Privacy notice for other visitors */}
+        {!isCurrentUser && (
+          <div className="privacy-notice">
+            Some data is hidden to protect this visitor's privacy. Location on map and coordinates are approximate (~100km).
+          </div>
+        )}
+
         {/* Unique Fingerprint ID - Show at top! */}
         {client && (
           <InfoSection title="Your Unique IDs" icon="!">

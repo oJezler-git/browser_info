@@ -123,6 +123,19 @@
   background: var(--black);
 }
 
+/* Privacy notice for other visitors */
+.privacy-notice {
+  background: var(--gray);
+  border: 2px solid var(--yellow);
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 0.75rem;
+  color: var(--light-gray);
+  text-align: center;
+  line-height: 1.4;
+}
+
 /* Info Row */
 .info-row {
   display: flex;
