@@ -4,10 +4,16 @@
  * Supports multiple instances with shared visitor state via Redis
  */
 
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { getGeolocation } from './geolocation';
-import { generateAIProfile, trackUniqueVisitor, getTotalUniqueVisitors, type GeoData } from './ai-profiler';
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serveStatic } from "hono/bun";
+import { getGeolocation } from "./geolocation";
+import {
+  generateAIProfile,
+  trackUniqueVisitor,
+  getTotalUniqueVisitors,
+  type GeoData,
+} from "./ai-profiler";
 import {
   initSharedVisitors,
   onVisitorEvent,
@@ -17,7 +23,7 @@ import {
   getAllSharedVisitors,
   getSharedOnlineCount,
   isSharedVisitorsConnected,
-} from './shared-visitors';
+} from "./shared-visitors";
 import type {
   VisitorInfo,
   ServerInfo,
@@ -26,10 +32,10 @@ import type {
   WelcomePayload,
   VisitorEventPayload,
   ClientInfoPayload,
-} from '../src/types';
+} from "../src/types";
 
 const app = new Hono();
-const PORT = parseInt(process.env.PORT || '3020', 10);
+const PORT = parseInt(process.env.PORT || "3020", 10);
 
 /** Local visitors map (this instance only) */
 const localVisitors = new Map<string, VisitorInfo>();
@@ -43,44 +49,50 @@ const connections = new Map<string, WebSocket>();
 // Initialize shared visitors via Redis
 initSharedVisitors().then((connected) => {
   if (connected) {
-    console.log('Shared visitor state enabled (Redis connected)');
+    console.log("Shared visitor state enabled (Redis connected)");
 
     // Listen for events from other instances
     onVisitorEvent((event) => {
-      if (event.type === 'joined') {
+      if (event.type === "joined") {
         allVisitors.set(event.visitor.id, event.visitor);
         // Broadcast to local websockets
         broadcast({
-          type: 'visitor_joined',
-          payload: { visitor: redactVisitorInfo(event.visitor) } as VisitorEventPayload,
+          type: "visitor_joined",
+          payload: {
+            visitor: redactVisitorInfo(event.visitor),
+          } as VisitorEventPayload,
         });
-      } else if (event.type === 'left') {
+      } else if (event.type === "left") {
         allVisitors.delete(event.visitor.id);
         broadcast({
-          type: 'visitor_left',
-          payload: { visitor: redactVisitorInfo(event.visitor) } as VisitorEventPayload,
+          type: "visitor_left",
+          payload: {
+            visitor: redactVisitorInfo(event.visitor),
+          } as VisitorEventPayload,
         });
-      } else if (event.type === 'updated') {
+      } else if (event.type === "updated") {
         allVisitors.set(event.visitor.id, event.visitor);
         broadcast({
-          type: 'visitor_updated',
-          payload: { visitor: redactVisitorInfo(event.visitor) } as VisitorEventPayload,
+          type: "visitor_updated",
+          payload: {
+            visitor: redactVisitorInfo(event.visitor),
+          } as VisitorEventPayload,
         });
       }
     });
   } else {
-    console.log('Running in single-instance mode (Redis not available)');
+    console.log("Running in single-instance mode (Redis not available)");
   }
 });
 
 // Enable CORS for development
-app.use('*', cors());
+app.use("*", cors());
 
 /** Health check endpoint */
-app.get('/health', async (c) => {
+app.get("/health", async (c) => {
   const sharedCount = await getSharedOnlineCount();
   return c.json({
-    status: 'ok',
+    status: "ok",
     localVisitors: localVisitors.size,
     totalOnline: sharedCount || allVisitors.size,
     redisConnected: isSharedVisitorsConnected(),
@@ -88,17 +100,17 @@ app.get('/health', async (c) => {
 });
 
 /** Get visitor info by ID */
-app.get('/api/visitor/:id', (c) => {
-  const id = c.req.param('id');
+app.get("/api/visitor/:id", (c) => {
+  const id = c.req.param("id");
   const visitor = localVisitors.get(id) || allVisitors.get(id);
   if (!visitor) {
-    return c.json({ error: 'Visitor not found' }, 404);
+    return c.json({ error: "Visitor not found" }, 404);
   }
   return c.json(visitor);
 });
 
 /** Get all visitors */
-app.get('/api/visitors', async (c) => {
+app.get("/api/visitors", async (c) => {
   // Try to get from Redis first (shared across instances)
   if (isSharedVisitorsConnected()) {
     const shared = await getAllSharedVisitors();
@@ -109,37 +121,40 @@ app.get('/api/visitors', async (c) => {
 });
 
 /** Get stats */
-app.get('/api/stats', async (c) => {
+app.get("/api/stats", async (c) => {
   const totalUnique = await getTotalUniqueVisitors();
   const online = await getSharedOnlineCount();
   return c.json({
-    online: online || allVisitors.size,  // Current active connections
-    totalUnique,                           // All-time unique visitors
+    online: online || allVisitors.size, // Current active connections
+    totalUnique, // All-time unique visitors
   });
 });
 
 /** AI-powered user profiling endpoint */
-app.post('/api/profile', async (c) => {
+app.post("/api/profile", async (c) => {
   try {
     const body = await c.req.json();
     const clientInfo = body.clientInfo as Partial<ClientInfo>;
 
     if (!clientInfo) {
-      return c.json({ error: 'clientInfo required' }, 400);
+      return c.json({ error: "clientInfo required" }, 400);
     }
 
     // Get IP and geo data for more accurate profiling
-    const forwarded = c.req.header('x-forwarded-for');
-    const ip = forwarded?.split(',')[0].trim() || c.req.header('x-real-ip') || 'unknown';
+    const forwarded = c.req.header("x-forwarded-for");
+    const ip =
+      forwarded?.split(",")[0].trim() || c.req.header("x-real-ip") || "unknown";
     const geoResult = await getGeolocation(ip);
 
-    const geo: GeoData | undefined = geoResult ? {
-      city: geoResult.city,
-      region: geoResult.region,
-      country: geoResult.country,
-      isp: geoResult.isp,
-      timezone: geoResult.timezone,
-    } : undefined;
+    const geo: GeoData | undefined = geoResult
+      ? {
+          city: geoResult.city,
+          region: geoResult.region,
+          country: geoResult.country,
+          isp: geoResult.isp,
+          timezone: geoResult.timezone,
+        }
+      : undefined;
 
     const result = await generateAIProfile(clientInfo, geo);
 
@@ -149,16 +164,27 @@ app.post('/api/profile', async (c) => {
       error: result.error,
     });
   } catch (err) {
-    console.error('Profile endpoint error:', err);
-    return c.json({ error: 'Internal server error', source: 'fallback' }, 500);
+    console.error("Profile endpoint error:", err);
+    return c.json({ error: "Internal server error", source: "fallback" }, 500);
   }
 });
+
+/**
+ * Serve static frontend files (bundled by Vite)
+ * This allows the backend to serve the full website in production
+ */
+app.use("/*", serveStatic({ root: "./dist" }));
+
+// SPA fallback: serve index.html for any unknown routes (allows client-side routing)
+app.get("*", serveStatic({ path: "./dist/index.html" }));
 
 /**
  * Generate a unique visitor ID
  */
 function generateId(): string {
-  return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  return `v_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 }
 
 /**
@@ -170,16 +196,18 @@ function redactVisitorInfo(visitor: VisitorInfo): VisitorInfo {
     ...visitor,
     server: {
       ...visitor.server,
-      ip: '•••.•••.•••.•••',
-      geo: visitor.server.geo ? {
-        ...visitor.server.geo,
-        city: '••••••',
-        // Round to whole number for privacy (~111km accuracy, still works for globe pin)
-        lat: Math.round(visitor.server.geo.lat),
-        lng: Math.round(visitor.server.geo.lng),
-        isp: '••••••',
-        org: '••••••',
-      } : null,
+      ip: "•••.•••.•••.•••",
+      geo: visitor.server.geo
+        ? {
+            ...visitor.server.geo,
+            city: "••••••",
+            // Round to whole number for privacy (~111km accuracy, still works for globe pin)
+            lat: Math.round(visitor.server.geo.lat),
+            lng: Math.round(visitor.server.geo.lng),
+            isp: "••••••",
+            org: "••••••",
+          }
+        : null,
     },
   };
 }
@@ -187,27 +215,35 @@ function redactVisitorInfo(visitor: VisitorInfo): VisitorInfo {
 /**
  * Redact all visitors except the specified one
  */
-function redactVisitorsExcept(allVisitors: VisitorInfo[], currentId: string): VisitorInfo[] {
-  return allVisitors.map(v => v.id === currentId ? v : redactVisitorInfo(v));
+function redactVisitorsExcept(
+  allVisitors: VisitorInfo[],
+  currentId: string
+): VisitorInfo[] {
+  return allVisitors.map((v) =>
+    v.id === currentId ? v : redactVisitorInfo(v)
+  );
 }
 
 /**
  * Extract real IP from request (handles Cloudflare, nginx proxies)
  */
-function getRealIP(req: Request, server: { requestIP?: (req: Request) => { address: string } | null }): string {
+function getRealIP(
+  req: Request,
+  server: { requestIP?: (req: Request) => { address: string } | null }
+): string {
   // Cloudflare
-  const cfIP = req.headers.get('cf-connecting-ip');
+  const cfIP = req.headers.get("cf-connecting-ip");
   if (cfIP) return cfIP;
 
   // X-Forwarded-For (first IP in chain)
-  const xff = req.headers.get('x-forwarded-for');
+  const xff = req.headers.get("x-forwarded-for");
   if (xff) {
-    const firstIP = xff.split(',')[0].trim();
+    const firstIP = xff.split(",")[0].trim();
     if (firstIP) return firstIP;
   }
 
   // X-Real-IP (nginx)
-  const realIP = req.headers.get('x-real-ip');
+  const realIP = req.headers.get("x-real-ip");
   if (realIP) return realIP;
 
   // Bun's requestIP
@@ -216,7 +252,7 @@ function getRealIP(req: Request, server: { requestIP?: (req: Request) => { addre
     if (addr) return addr.address;
   }
 
-  return '127.0.0.1';
+  return "127.0.0.1";
 }
 
 /**
@@ -228,19 +264,19 @@ async function buildServerInfo(req: Request, ip: string): Promise<ServerInfo> {
   // Extract relevant headers (sanitized)
   const headers: Record<string, string> = {};
   const headerWhitelist = [
-    'accept',
-    'accept-encoding',
-    'accept-language',
-    'cache-control',
-    'connection',
-    'dnt',
-    'sec-ch-ua',
-    'sec-ch-ua-mobile',
-    'sec-ch-ua-platform',
-    'sec-fetch-dest',
-    'sec-fetch-mode',
-    'sec-fetch-site',
-    'upgrade-insecure-requests',
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "cache-control",
+    "connection",
+    "dnt",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "upgrade-insecure-requests",
   ];
 
   for (const name of headerWhitelist) {
@@ -253,9 +289,9 @@ async function buildServerInfo(req: Request, ip: string): Promise<ServerInfo> {
   return {
     ip,
     geo,
-    userAgent: req.headers.get('user-agent') || 'Unknown',
-    acceptLanguage: req.headers.get('accept-language') || 'Unknown',
-    referer: req.headers.get('referer') || 'Direct',
+    userAgent: req.headers.get("user-agent") || "Unknown",
+    acceptLanguage: req.headers.get("accept-language") || "Unknown",
+    referer: req.headers.get("referer") || "Direct",
     headers,
   };
 }
@@ -281,13 +317,13 @@ const server = Bun.serve({
     const url = new URL(req.url);
 
     // WebSocket upgrade
-    if (url.pathname === '/ws') {
+    if (url.pathname === "/ws") {
       const ip = getRealIP(req, server);
       const upgraded = server.upgrade(req, {
         data: { ip, req },
       });
       if (upgraded) return undefined;
-      return new Response('WebSocket upgrade failed', { status: 400 });
+      return new Response("WebSocket upgrade failed", { status: 400 });
     }
 
     // Handle Hono routes
@@ -334,21 +370,29 @@ const server = Bun.serve({
         visitors: redactVisitorsExcept(allVisitorsList, id),
       };
 
-      ws.send(JSON.stringify({
-        type: 'welcome',
-        payload: welcomePayload,
-      } as WSMessage));
+      ws.send(
+        JSON.stringify({
+          type: "welcome",
+          payload: welcomePayload,
+        } as WSMessage)
+      );
 
       // Broadcast new visitor to local websockets (other instances get via Redis pub/sub)
       broadcast(
         {
-          type: 'visitor_joined',
-          payload: { visitor: redactVisitorInfo(visitor) } as VisitorEventPayload,
+          type: "visitor_joined",
+          payload: {
+            visitor: redactVisitorInfo(visitor),
+          } as VisitorEventPayload,
         },
         id
       );
 
-      console.log(`Visitor connected: ${id} from ${ip} (${serverInfo.geo?.city || 'Unknown'})`);
+      console.log(
+        `Visitor connected: ${id} from ${ip} (${
+          serverInfo.geo?.city || "Unknown"
+        })`
+      );
     },
 
     message(ws, message) {
@@ -356,7 +400,7 @@ const server = Bun.serve({
         const data = JSON.parse(message.toString()) as WSMessage;
         const visitorId = (ws as unknown as { visitorId: string }).visitorId;
 
-        if (data.type === 'client_info') {
+        if (data.type === "client_info") {
           // Update visitor with client info
           const visitor = localVisitors.get(visitorId);
           if (visitor) {
@@ -369,28 +413,41 @@ const server = Bun.serve({
             publishVisitorUpdated(visitor);
 
             // Track unique visitor
-            if (payload.clientInfo.fingerprintId && payload.clientInfo.crossBrowserId) {
-              trackUniqueVisitor(payload.clientInfo.fingerprintId, payload.clientInfo.crossBrowserId);
+            if (
+              payload.clientInfo.fingerprintId &&
+              payload.clientInfo.crossBrowserId
+            ) {
+              trackUniqueVisitor(
+                payload.clientInfo.fingerprintId,
+                payload.clientInfo.crossBrowserId
+              );
             }
 
             // Send full info back to the visitor
             const currentWs = connections.get(visitorId);
             if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-              currentWs.send(JSON.stringify({
-                type: 'visitor_updated',
-                payload: { visitor } as VisitorEventPayload,
-              }));
+              currentWs.send(
+                JSON.stringify({
+                  type: "visitor_updated",
+                  payload: { visitor } as VisitorEventPayload,
+                })
+              );
             }
 
             // Broadcast redacted info to local websockets
-            broadcast({
-              type: 'visitor_updated',
-              payload: { visitor: redactVisitorInfo(visitor) } as VisitorEventPayload,
-            }, visitorId);
+            broadcast(
+              {
+                type: "visitor_updated",
+                payload: {
+                  visitor: redactVisitorInfo(visitor),
+                } as VisitorEventPayload,
+              },
+              visitorId
+            );
           }
         }
       } catch (error) {
-        console.error('WebSocket message error:', error);
+        console.error("WebSocket message error:", error);
       }
     },
 
@@ -409,8 +466,10 @@ const server = Bun.serve({
 
           // Broadcast visitor left to local websockets
           broadcast({
-            type: 'visitor_left',
-            payload: { visitor: redactVisitorInfo(visitor) } as VisitorEventPayload,
+            type: "visitor_left",
+            payload: {
+              visitor: redactVisitorInfo(visitor),
+            } as VisitorEventPayload,
           });
         }
 
